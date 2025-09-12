@@ -72,7 +72,7 @@ func init() {
 	flags.StringVar(&shortName, "short-name", "", "SDTP 'ShortName' field (query parameter)")
 	flags.StringVar(&mission, "mission", "", "SDTP 'mission' field (query parameter)")
 	flags.StringToStringVarP(&tags, "tag", "t", map[string]string{}, "<key>=<value> tags to filter by. May be specified multiple times or as a comma-separated list")
-	flags.BoolVar(&noAckFlag, "no-ack", false, "Acknowledge files after successful ingest")
+	flags.BoolVar(&noAckFlag, "no-ack", false, "Skip acknowledgment after successful ingest")
 	flags.BoolVar(&listFlag, "list", false, "List available files, but do not download")
 	flags.DurationVar(&httpTimeout, "http-timeout", time.Minute*5, "HTTP client timeout in seconds for list operations")
 	flags.UintVar(&concurrency, "concurrency", 4, "Number of concurrent downloads")
