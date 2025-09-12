@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/sha256"
 	"crypto/sha512"
@@ -14,6 +15,13 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
+)
+
+var (
+	ErrNotAuthorized = fmt.Errorf("not authorized")
+	ErrNotFound      = fmt.Errorf("not found")
+	ErrForbidden     = fmt.Errorf("forbidden")
 )
 
 // file returned to the client
@@ -32,7 +40,7 @@ type SDTP struct {
 	apiUrl *url.URL
 }
 
-func NewSDTP(apiUrl *url.URL, certFile, keyFile string) (*SDTP, error) {
+func NewSDTP(apiUrl *url.URL, certFile, keyFile string, timeout time.Duration) (*SDTP, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load key pair: %w", err)
@@ -44,24 +52,42 @@ func NewSDTP(apiUrl *url.URL, certFile, keyFile string) (*SDTP, error) {
 				Certificates: []tls.Certificate{cert},
 			},
 		},
+		Timeout: timeout,
 	}
 
 	return &SDTP{client, apiUrl}, nil
 }
 
-func (s *SDTP) List(tags map[string]string) ([]FileInfo, error) {
+func (s *SDTP) mustNewReq(ctx context.Context, method, url string) *http.Request {
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+	if err != nil {
+		panic(fmt.Sprintf("failed to create request: %v", err))
+	}
+	return req
+}
+
+func (s *SDTP) List(ctx context.Context, tags map[string]string) ([]FileInfo, error) {
 	qry := url.Values{}
 	for k, v := range tags {
 		qry.Set(k, v)
 	}
 	epUrl := fmt.Sprintf("%s/files?%s", s.apiUrl.String(), qry.Encode())
 
-	resp, err := s.client.Get(epUrl)
+	req := s.mustNewReq(ctx, http.MethodGet, epUrl)
+	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup request: %w", err)
 	}
 	defer resp.Body.Close()
 
+	switch resp.StatusCode {
+	case http.StatusUnauthorized:
+		return nil, ErrNotAuthorized
+	case http.StatusForbidden:
+		return nil, ErrForbidden
+	case http.StatusNotFound:
+		return nil, ErrNotFound
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("request failed: %s", resp.Status)
 	}
@@ -76,14 +102,23 @@ func (s *SDTP) List(tags map[string]string) ([]FileInfo, error) {
 	return listResp.Files, nil
 }
 
-func (s *SDTP) Download(file FileInfo, destDir string) error {
+func (s *SDTP) Download(ctx context.Context, file FileInfo, destDir string) error {
 	epUrl := fmt.Sprintf("%s/files/%d", s.apiUrl, file.ID)
 
-	resp, err := s.client.Get(epUrl)
+	req := s.mustNewReq(ctx, http.MethodGet, epUrl)
+	resp, err := s.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to setup request: %w", err)
 	}
 	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusUnauthorized:
+		return ErrNotAuthorized
+	case http.StatusForbidden:
+		return ErrForbidden
+	case http.StatusNotFound:
+		return ErrNotFound
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("request failed: %s", resp.Status)
 	}
@@ -108,19 +143,72 @@ func (s *SDTP) Download(file FileInfo, destDir string) error {
 	return nil
 }
 
-func (s *SDTP) Ack(file FileInfo) error {
+func (s *SDTP) Ack(ctx context.Context, file FileInfo) error {
 	epUrl := fmt.Sprintf("%s/files/%d", s.apiUrl, file.ID)
 
-	req, err := http.NewRequest(http.MethodDelete, epUrl, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
+	req := s.mustNewReq(ctx, http.MethodDelete, epUrl)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to setup request: %w", err)
 	}
 	defer resp.Body.Close()
 
+	switch resp.StatusCode {
+	case http.StatusUnauthorized:
+		return ErrNotAuthorized
+	case http.StatusForbidden:
+		return ErrForbidden
+	case http.StatusNotFound:
+		return ErrNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("request failed: %s", resp.Status)
+	}
+	return nil
+}
+
+func (s *SDTP) Register(ctx context.Context) error {
+	epUrl := fmt.Sprintf("%s/register", s.apiUrl)
+
+	req := s.mustNewReq(ctx, http.MethodPut, epUrl)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to setup request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusUnauthorized:
+		return ErrNotAuthorized
+	case http.StatusForbidden:
+		return ErrForbidden
+	case http.StatusNotFound:
+		return ErrNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("request failed: %s", resp.Status)
+	}
+	return nil
+}
+
+func (s *SDTP) Check(ctx context.Context) error {
+	epUrl := fmt.Sprintf("%s/files", s.apiUrl)
+
+	req := s.mustNewReq(ctx, http.MethodHead, epUrl)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to setup request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusUnauthorized:
+		return ErrNotAuthorized
+	case http.StatusForbidden:
+		return ErrForbidden
+	case http.StatusNotFound:
+		return ErrNotFound
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("request failed: %s", resp.Status)
 	}

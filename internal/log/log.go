@@ -32,7 +32,7 @@ func Warn(format string, args ...any) {
 }
 
 func Fatal(format string, args ...any) {
-	infoLogger.Printf("FATAL: "+format, args...)
+	infoLogger.Printf(format, args...)
 	os.Exit(1)
 }
 

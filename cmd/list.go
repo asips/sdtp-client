@@ -1,8 +1,12 @@
 package cmd
 
 import (
-	"fmt"
+	"context"
 	"net/url"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/asips/sdtp-client/internal"
 	"github.com/asips/sdtp-client/internal/log"
@@ -14,23 +18,29 @@ var listCmd = &cobra.Command{
 	Short: "List available items from the server based on provided tags",
 	Long:  "List available items from the server based on provided tags",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		apiUrl, err := url.Parse(strApiUrl)
-		if err != nil {
-			return fmt.Errorf("invalid api-url: %w", err)
-		}
-		doList(apiUrl, certPath, keyPath, tags)
+		apiUrl := parseApiUrl(strApiUrl)
+		doList(apiUrl, certPath, keyPath, tags, httpTimeout)
 
 		return nil
 	},
 }
 
-func doList(apiUrl *url.URL, certPath, keyPath string, tags map[string]string) {
-	sdtp, err := internal.NewSDTP(apiUrl, certPath, keyPath)
+func init() {
+	flags := listCmd.Flags()
+
+	flags.DurationVar(&httpTimeout, "http-timeout", time.Second*60, "HTTP client timeout in seconds for list operations")
+}
+
+func doList(apiUrl *url.URL, certPath, keyPath string, tags map[string]string, timeout time.Duration) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	sdtp, err := internal.NewSDTP(apiUrl, certPath, keyPath, timeout)
 	if err != nil {
 		log.Fatal("Failed to create SDTP client: %s", err)
 	}
 
-	files, err := sdtp.List(tags)
+	files, err := sdtp.List(ctx, tags)
 	if err != nil {
 		log.Fatal("Failed to list files: %s", err)
 	}
