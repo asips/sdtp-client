@@ -34,7 +34,7 @@ References:
 	Version: internal.Version + " (" + internal.GitSHA + ")",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if checkCertExprFlag {
-			ensureCertExpr(certPath, keyPath, checkCertDays)
+			checkCert(certPath, keyPath, checkCertDays)
 		}
 		return nil
 	},
@@ -45,7 +45,7 @@ References:
 
 func init() {
 	flags := rootCmd.PersistentFlags()
-	flags.StringVarP(&strApiUrl, "api-url", "u", "https://sips-data.ssec.wisc.edu/rivet/api/v1", "SDTP API base url")
+	flags.StringVarP(&strApiUrl, "api-url", "u", "https://sips-data.ssec.wisc.edu/rivet/v1", "SDTP API base url")
 	flags.StringVarP(&certPath, "cert", "c", "", "Path to PEM encoded client certificate.")
 	flags.StringVarP(&keyPath, "key", "k", "", "Path to PEM encoded client private key")
 	flags.BoolVar(&checkCertExprFlag, "check-cert-expr", true, "Set to false to skip checking cert expiration")

@@ -41,7 +41,7 @@ var ingestCmd = &cobra.Command{
 			tags["ShortName"] = shortName
 		}
 		if checkCertExprFlag {
-			ensureCertExpr(certPath, keyPath, checkCertDays)
+			checkCert(certPath, keyPath, checkCertDays)
 		}
 
 		if listFlag {
@@ -72,7 +72,6 @@ func init() {
 	flags.DurationVar(&httpTimeout, "http-timeout", time.Minute*5, "HTTP client timeout in seconds for list operations")
 
 	flags.MarkDeprecated("list", "use 'list' sub-command instead")
-
 }
 
 func doIngest(apiUrl *url.URL, certFile, keyFile, destDir string, tags map[string]string, ack bool) error {

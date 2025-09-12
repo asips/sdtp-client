@@ -19,9 +19,9 @@ import (
 )
 
 var (
-	ErrNotAuthorized = fmt.Errorf("not authorized")
+	ErrNotAuthorized = fmt.Errorf("unable to authenticate with the provided certificate")
 	ErrNotFound      = fmt.Errorf("not found")
-	ErrForbidden     = fmt.Errorf("forbidden")
+	ErrForbidden     = fmt.Errorf("authenticated, but no permissions to the resource")
 )
 
 // file returned to the client
@@ -50,6 +50,10 @@ func NewSDTP(apiUrl *url.URL, certFile, keyFile string, timeout time.Duration) (
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
 				Certificates: []tls.Certificate{cert},
+				// disable TLS 1.3 to avoid Apache SSL error "Re-negotiation handshake failed"
+				MaxVersion: tls.VersionTLS12,
+				// set to avoid Apahce SSL error "SSL Library Error: error:0A000153:SSL routines::no renegotiation"
+				Renegotiation: tls.RenegotiateOnceAsClient,
 			},
 		},
 		Timeout: timeout,
@@ -194,7 +198,7 @@ func (s *SDTP) Register(ctx context.Context) error {
 func (s *SDTP) Check(ctx context.Context) error {
 	epUrl := fmt.Sprintf("%s/files", s.apiUrl)
 
-	req := s.mustNewReq(ctx, http.MethodHead, epUrl)
+	req := s.mustNewReq(ctx, http.MethodGet, epUrl)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to setup request: %w", err)

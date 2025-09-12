@@ -18,6 +18,29 @@ type CertInfo struct {
 	Expiration time.Time
 	Expired    bool
 	Issuer     string
+	DN         string
+}
+
+var oid = map[string]string{
+	"2.5.4.3":                    "CN",
+	"2.5.4.4":                    "SN",
+	"2.5.4.5":                    "serialNumber",
+	"2.5.4.6":                    "C",
+	"2.5.4.7":                    "L",
+	"2.5.4.8":                    "ST",
+	"2.5.4.9":                    "streetAddress",
+	"2.5.4.10":                   "O",
+	"2.5.4.11":                   "OU",
+	"2.5.4.12":                   "title",
+	"2.5.4.17":                   "postalCode",
+	"2.5.4.42":                   "GN",
+	"2.5.4.43":                   "initials",
+	"2.5.4.44":                   "generationQualifier",
+	"2.5.4.46":                   "dnQualifier",
+	"2.5.4.65":                   "pseudonym",
+	"0.9.2342.19200300.100.1.25": "DC",
+	"1.2.840.113549.1.9.1":       "emailAddress",
+	"0.9.2342.19200300.100.1.1":  "userid",
 }
 
 // getCertificateInfo reads and parses a PEM encoded certificate file. There must be exactly
@@ -33,33 +56,21 @@ func getCertificateInfo(certFile, keyFile string) (CertInfo, error) {
 		Expiration: cert.NotAfter,
 		Expired:    time.Now().After(cert.NotAfter),
 		Issuer:     cert.Issuer.String(),
+		DN:         cert.Subject.ToRDNSequence().String(),
 	}, nil
 }
 
-func ensureCertExpr(certFile, keyFile string, checkCertDays int) {
-	certInfo, err := getCertificateInfo(certFile, keyFile)
+func checkCert(certFile, keyFile string, days int) {
+	info, err := getCertificateInfo(certPath, keyPath)
 	if err != nil {
-		log.Warn("Failed to get certification info; skipping cert expriation check: %s", err)
+		log.Warn("Failed to get certificate info: %s", err)
 	}
-
-	if certInfo.Expired {
-		log.Printf(`ERROR:   Certificate Expired!
-ERROR:
-ERROR:   Expiration Date: %s
-ERROR:   Issuer:          %s
-ERROR:
-`, certInfo.Expiration.Format(time.RFC3339), certInfo.Issuer)
+	if info.Expired {
+		log.Printf("Certificate expired on %s, run 'check' for more info", info.Expiration.Format(time.RFC3339))
 		os.Exit(3)
-	} else if certInfo.DaysLeft > 0 && certInfo.DaysLeft <= checkCertDays {
-		log.Printf(`WARNING:    Certificate expires soon!
-WARNING:
-WARNING:    Expiration Date: %s
-WARNING:    Days Left:       %d
-WARNING:    Issuer:          %s
-WARNING:
-`, certInfo.Expiration.Format(time.RFC3339), certInfo.DaysLeft, certInfo.Issuer)
-	} else {
-		log.Printf("Certificate OK! expires on %s (in %d days), issued by %s", certInfo.Expiration.Format(time.RFC3339), certInfo.DaysLeft, certInfo.Issuer)
+	}
+	if info.DaysLeft > 0 && info.DaysLeft <= days {
+		log.Info("WARNING!! Certificate expiring in %s days; run 'check' for more info", info.DaysLeft)
 	}
 }
 

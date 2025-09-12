@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/asips/sdtp-client/internal"
 	"github.com/asips/sdtp-client/internal/log"
@@ -29,6 +30,42 @@ func docheck(apiUrl *url.URL) {
 	sdtp, err := internal.NewSDTP(apiUrl, certPath, keyPath, httpTimeout)
 	if err != nil {
 		log.Fatal("Failed to create SDTP client: %s", err)
+	}
+
+	certInfo, err := getCertificateInfo(certPath, keyPath)
+	if err != nil {
+		log.Warn("Failed to get certification info; skipping cert expriation check: %s", err)
+	}
+
+	if certInfo.Expired {
+		log.Printf(`ERROR:   Certificate Expired!
+ERROR:
+ERROR:   DN               %s
+ERROR:   Expiration Date: %s
+ERROR:   Issuer:          %s
+ERROR:
+
+`, certInfo.DN, certInfo.Expiration.Format(time.RFC3339), certInfo.Issuer)
+		os.Exit(3)
+	} else if certInfo.DaysLeft > 0 && certInfo.DaysLeft <= checkCertDays {
+		log.Printf(`WARNING:    Certificate expires soon!
+WARNING:
+WARNING:	DN:              %s
+WARNING:    Expiration Date: %s
+WARNING:    Days Left:       %d
+WARNING:    Issuer:          %s
+WARNING:
+
+`, certInfo.DN, certInfo.Expiration.Format(time.RFC3339), certInfo.DaysLeft, certInfo.Issuer)
+	} else {
+		log.Printf(`Certificate Ok!
+
+    DN:              %s
+    Expiration Date: %s
+    Days Left:       %d
+    Issuer:          %s
+
+`, certInfo.DN, certInfo.Expiration.Format(time.RFC3339), certInfo.DaysLeft, certInfo.Issuer)
 	}
 
 	err = sdtp.Check(ctx)
