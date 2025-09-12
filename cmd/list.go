@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/url"
 	"os"
 	"os/signal"
@@ -16,7 +18,11 @@ import (
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List available items from the server based on provided tags",
-	Long:  "List available items from the server based on provided tags",
+	Long: `List available items from the server based on provided tags.
+
+Listed files will be printed as JSON objects, one per line to stdout. Any log messages
+go to stderr.
+`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		apiUrl := parseApiUrl(strApiUrl)
 		doList(apiUrl, certPath, keyPath, tags, httpTimeout)
@@ -45,7 +51,18 @@ func doList(apiUrl *url.URL, certPath, keyPath string, tags map[string]string, t
 		log.Fatal("Failed to list files: %s", err)
 	}
 
+	if len(files) == 0 {
+		log.Info("No files found")
+		return
+	}
+
+	log.Info("Found %d files:", len(files))
 	for _, file := range files {
-		log.Printf("ID: %d, Name: %s, Size: %d, Expires: %s", file.ID, file.Name, file.Size, file.Expires)
+		dat, err := json.Marshal(file)
+		if err != nil {
+			log.Warn("failed to marshal to json: %s", err)
+			continue
+		}
+		fmt.Fprintf(os.Stdout, "%s\n", string(dat))
 	}
 }
