@@ -136,8 +136,9 @@ func (s *SDTP) Download(ctx context.Context, file FileInfo, destDir string) erro
 	if _, err = io.Copy(dest, resp.Body); err != nil {
 		return fmt.Errorf("failed to write to %s: %w", destPath, err)
 	}
+	dest.Close()
 
-	if !dest.Matches(file.Checksum) {
+	if !dest.ChecksumMatches() {
 		os.Remove(destPath)
 		return fmt.Errorf("checksum mismatch for %s", destPath)
 	}
@@ -164,11 +165,12 @@ func (s *SDTP) Ack(ctx context.Context, file FileInfo) error {
 		return ErrForbidden
 	case http.StatusNotFound:
 		return ErrNotFound
+	case http.StatusNoContent, http.StatusOK:
+		// Ok response should be a 204, but let's call 200 ok too
+		return nil
 	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("request failed: %s", resp.Status)
-	}
-	return nil
+
+	return fmt.Errorf("request failed: %s", resp.Status)
 }
 
 func (s *SDTP) Register(ctx context.Context) error {
@@ -220,21 +222,27 @@ func (s *SDTP) Check(ctx context.Context) error {
 }
 
 type writer struct {
-	w io.Writer
-	h hash.Hash
+	w            io.WriteCloser
+	h            hash.Hash
+	expectedCsum string
+}
+
+func (w *writer) Close() error {
+	return w.w.Close()
 }
 
 func (w *writer) Write(p []byte) (n int, err error) {
+	w.h.Write(p)
 	return w.w.Write(p)
 }
 
-func (w *writer) Matches(checksum string) bool {
-	sum := fmt.Sprintf("%x", w.h.Sum(nil))
-	return checksum == sum
+func (w *writer) ChecksumMatches() bool {
+	sum := strings.ToLower(fmt.Sprintf("%x", w.h.Sum(nil)))
+	return w.expectedCsum == sum
 }
 
 func newWriter(destPath, checksum string) (*writer, error) {
-	alg, _, found := strings.Cut(checksum, ":")
+	alg, checksumVal, found := strings.Cut(checksum, ":")
 	if !found {
 		return nil, fmt.Errorf("invalid checksum format")
 	}
@@ -243,7 +251,6 @@ func newWriter(destPath, checksum string) (*writer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open destination %s: %w", destPath, err)
 	}
-	defer dest.Close()
 
 	var hash hash.Hash
 	switch strings.ToLower(alg) {
@@ -258,5 +265,5 @@ func newWriter(destPath, checksum string) (*writer, error) {
 	default:
 		return nil, fmt.Errorf("%s checksum not supported", alg)
 	}
-	return &writer{dest, hash}, nil
+	return &writer{dest, hash, checksumVal}, nil
 }

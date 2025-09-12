@@ -1,19 +1,16 @@
 package cmd
 
 import (
-	"context"
 	"crypto/tls"
 	"fmt"
 	"net/url"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/asips/sdtp-client/internal/log"
 )
 
-type CertInfo struct {
+type CertPrintf struct {
 	DaysLeft   int
 	Expiration time.Time
 	Expired    bool
@@ -43,15 +40,15 @@ var oid = map[string]string{
 	"0.9.2342.19200300.100.1.1":  "userid",
 }
 
-// getCertificateInfo reads and parses a PEM encoded certificate file. There must be exactly
+// getCertificatePrintf reads and parses a PEM encoded certificate file. There must be exactly
 // one certificate in the file, i.e., it must not be a certificate chain.
-func getCertificateInfo(certFile, keyFile string) (CertInfo, error) {
+func getCertificateInfo(certFile, keyFile string) (CertPrintf, error) {
 	chain, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
-		return CertInfo{}, fmt.Errorf("failed to load certificate: %w", err)
+		return CertPrintf{}, fmt.Errorf("failed to load certificate: %w", err)
 	}
 	cert := chain.Leaf
-	return CertInfo{
+	return CertPrintf{
 		DaysLeft:   -int(time.Since(cert.NotAfter).Hours() / 24),
 		Expiration: cert.NotAfter,
 		Expired:    time.Now().After(cert.NotAfter),
@@ -63,31 +60,15 @@ func getCertificateInfo(certFile, keyFile string) (CertInfo, error) {
 func checkCert(certFile, keyFile string, days int) {
 	info, err := getCertificateInfo(certPath, keyPath)
 	if err != nil {
-		log.Warn("Failed to get certificate info: %s", err)
+		log.Printf("Failed to get certificate info: %s", err)
 	}
 	if info.Expired {
 		log.Printf("Certificate expired on %s, run 'check' for more info", info.Expiration.Format(time.RFC3339))
 		os.Exit(3)
 	}
 	if info.DaysLeft > 0 && info.DaysLeft <= days {
-		log.Info("WARNING!! Certificate expiring in %s days; run 'check' for more info", info.DaysLeft)
+		log.Printf("WARNING!! Certificate expiring in %d days; run 'check' for more info", info.DaysLeft)
 	}
-}
-
-// ExitHandler returns a context.Context that will be canceled if any of the
-// provided signals are received.
-func exitHandler(sig ...os.Signal) context.Context {
-	if len(sig) == 0 {
-		sig = []os.Signal{os.Interrupt, syscall.SIGTERM}
-	}
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, sig...)
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		log.Info("canceled %s", <-ch)
-		cancel()
-	}()
-	return ctx
 }
 
 func parseApiUrl(strUrl string) *url.URL {

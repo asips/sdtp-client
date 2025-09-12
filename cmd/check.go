@@ -34,7 +34,7 @@ func docheck(apiUrl *url.URL) {
 
 	certInfo, err := getCertificateInfo(certPath, keyPath)
 	if err != nil {
-		log.Warn("Failed to get certification info; skipping cert expriation check: %s", err)
+		log.Printf("Failed to get certification info; skipping cert expriation check: %s", err)
 	}
 
 	if certInfo.Expired {

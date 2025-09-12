@@ -23,17 +23,11 @@ func Debug(s string, args ...any) {
 	}
 }
 
-func Info(format string, args ...any) {
+func Printf(format string, args ...any) {
 	infoLogger.Printf(format, args...)
-}
-
-func Warn(format string, args ...any) {
-	warnLogger.Printf(format, args...)
 }
 
 func Fatal(format string, args ...any) {
 	infoLogger.Printf(format, args...)
 	os.Exit(1)
 }
-
-var Printf = Info

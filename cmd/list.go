@@ -52,15 +52,15 @@ func doList(apiUrl *url.URL, certPath, keyPath string, tags map[string]string, t
 	}
 
 	if len(files) == 0 {
-		log.Info("No files found")
+		log.Printf("No files found")
 		return
 	}
 
-	log.Info("Found %d files:", len(files))
+	log.Printf("Found %d files:", len(files))
 	for _, file := range files {
 		dat, err := json.Marshal(file)
 		if err != nil {
-			log.Warn("failed to marshal to json: %s", err)
+			log.Printf("failed to marshal to json: %s", err)
 			continue
 		}
 		fmt.Fprintf(os.Stdout, "%s\n", string(dat))
