@@ -28,6 +28,7 @@ function build() {
   fi
 
   go build -o ${builddir}/${binname} -ldflags "-X ${pkg}/internal.Version=${ver} -X ${pkg}/internal.GitSHA=${sha}" 
+  sha256sum ${builddir}/${binname} > ${builddir}/${binname}.sha256
 }
 
 mkdir -pv $builddir

@@ -5,6 +5,7 @@ This repository contains a CLI tool for downloading data from an SDTP server.
 It supports listing available files, downloading those files, verifying their checksum,
 and acknowledging successful downloads back to the server.
 
+
 ## Authentication
 
 Authentication is done using x509 client certificates, therefore you must provide a
