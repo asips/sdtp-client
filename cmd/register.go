@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -17,21 +16,34 @@ var registerCmd = &cobra.Command{
 	Short: "Register a new client certificate with the server",
 	Long:  "Register a new client certificate with the server",
 	Run: func(cmd *cobra.Command, args []string) {
+		flags := cmd.Flags()
+		certPath, err := flags.GetString("cert")
+		cobra.CheckErr(err)
+		keyPath, err := flags.GetString("key")
+		cobra.CheckErr(err)
+		httpTimeout, err := flags.GetDuration("http-timeout")
+		cobra.CheckErr(err)
+
+		strApiUrl, err := flags.GetString("api-url")
+		cobra.CheckErr(err)
 		apiUrl := parseApiUrl(strApiUrl)
-		doRegister(apiUrl)
+		sdtp, err := internal.NewDefaultSDTP(apiUrl, certPath, keyPath, httpTimeout)
+		if err != nil {
+			log.Fatal("Failed to create SDTP client: %s", err)
+		}
+
+		doRegister(sdtp, certPath, keyPath)
 	},
 }
 
-func doRegister(apiUrl *url.URL) {
+func doRegister(sdtp internal.SDTPClient, certFile, keyFile string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	sdtp, err := internal.NewSDTP(apiUrl, certPath, keyPath, httpTimeout)
-	if err != nil {
-		log.Fatal("Failed to create SDTP client: %s", err)
-	}
-
-	if err := sdtp.Register(ctx); err != nil {
+	err := sdtp.Register(ctx)
+	if err == internal.ErrExists {
+		log.Fatal("Registration already exists. Contact your SDTP administrator to activate your account.")
+	} else if err != nil {
 		log.Fatal("Registration failed: %s", err)
 	}
 	log.Printf("Registration successful. Contact your SDTP administrator to activate your account.")

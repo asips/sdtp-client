@@ -10,7 +10,7 @@ import (
 	"github.com/asips/sdtp-client/internal/log"
 )
 
-type CertPrintf struct {
+type CertInfo struct {
 	DaysLeft   int
 	Expiration time.Time
 	Expired    bool
@@ -42,13 +42,13 @@ var oid = map[string]string{
 
 // getCertificatePrintf reads and parses a PEM encoded certificate file. There must be exactly
 // one certificate in the file, i.e., it must not be a certificate chain.
-func getCertificateInfo(certFile, keyFile string) (CertPrintf, error) {
+func getCertificateInfo(certFile, keyFile string) (CertInfo, error) {
 	chain, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
-		return CertPrintf{}, fmt.Errorf("failed to load certificate: %w", err)
+		return CertInfo{}, fmt.Errorf("failed to load certificate: %w", err)
 	}
 	cert := chain.Leaf
-	return CertPrintf{
+	return CertInfo{
 		DaysLeft:   -int(time.Since(cert.NotAfter).Hours() / 24),
 		Expiration: cert.NotAfter,
 		Expired:    time.Now().After(cert.NotAfter),
@@ -58,7 +58,7 @@ func getCertificateInfo(certFile, keyFile string) (CertPrintf, error) {
 }
 
 func checkCert(certFile, keyFile string, days int) {
-	info, err := getCertificateInfo(certPath, keyPath)
+	info, err := getCertificateInfo(certFile, keyFile)
 	if err != nil {
 		log.Printf("Failed to get certificate info: %s", err)
 	}
@@ -72,7 +72,7 @@ func checkCert(certFile, keyFile string, days int) {
 }
 
 func parseApiUrl(strUrl string) *url.URL {
-	u, err := url.Parse(strApiUrl)
+	u, err := url.Parse(strUrl)
 	if err != nil {
 		log.Fatal("invalid api-url: %s", err)
 	}

@@ -22,6 +22,7 @@ var (
 	ErrNotAuthorized = fmt.Errorf("unable to authenticate with the provided certificate")
 	ErrNotFound      = fmt.Errorf("not found")
 	ErrForbidden     = fmt.Errorf("authenticated, but no permissions to the resource")
+	ErrExists        = fmt.Errorf("already exists")
 )
 
 // file returned to the client
@@ -35,12 +36,20 @@ type FileInfo struct {
 	Extra    map[string]any    `json:"extra"`
 }
 
-type SDTP struct {
+type SDTPClient interface {
+	List(ctx context.Context, tags map[string]string) ([]FileInfo, error)
+	Download(ctx context.Context, file FileInfo, destDir string) error
+	Ack(ctx context.Context, file FileInfo) error
+	Register(ctx context.Context) error
+	Check(ctx context.Context) error
+}
+
+type DefaultSDTPClient struct {
 	client *http.Client
 	apiUrl *url.URL
 }
 
-func NewSDTP(apiUrl *url.URL, certFile, keyFile string, timeout time.Duration) (*SDTP, error) {
+func NewDefaultSDTP(apiUrl *url.URL, certFile, keyFile string, timeout time.Duration) (*DefaultSDTPClient, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load key pair: %w", err)
@@ -59,10 +68,12 @@ func NewSDTP(apiUrl *url.URL, certFile, keyFile string, timeout time.Duration) (
 		Timeout: timeout,
 	}
 
-	return &SDTP{client, apiUrl}, nil
+	return &DefaultSDTPClient{client, apiUrl}, nil
 }
 
-func (s *SDTP) mustNewReq(ctx context.Context, method, url string) *http.Request {
+//go:generate mockgen -package internal -source sdtp.go -destination sdtp_mock.go *
+
+func (s *DefaultSDTPClient) mustNewReq(ctx context.Context, method, url string) *http.Request {
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create request: %v", err))
@@ -70,7 +81,7 @@ func (s *SDTP) mustNewReq(ctx context.Context, method, url string) *http.Request
 	return req
 }
 
-func (s *SDTP) List(ctx context.Context, tags map[string]string) ([]FileInfo, error) {
+func (s *DefaultSDTPClient) List(ctx context.Context, tags map[string]string) ([]FileInfo, error) {
 	qry := url.Values{}
 	for k, v := range tags {
 		qry.Set(k, v)
@@ -106,7 +117,7 @@ func (s *SDTP) List(ctx context.Context, tags map[string]string) ([]FileInfo, er
 	return listResp.Files, nil
 }
 
-func (s *SDTP) Download(ctx context.Context, file FileInfo, destDir string) error {
+func (s *DefaultSDTPClient) Download(ctx context.Context, file FileInfo, destDir string) error {
 	epUrl := fmt.Sprintf("%s/files/%d", s.apiUrl, file.ID)
 
 	req := s.mustNewReq(ctx, http.MethodGet, epUrl)
@@ -148,7 +159,7 @@ func (s *SDTP) Download(ctx context.Context, file FileInfo, destDir string) erro
 	return nil
 }
 
-func (s *SDTP) Ack(ctx context.Context, file FileInfo) error {
+func (s *DefaultSDTPClient) Ack(ctx context.Context, file FileInfo) error {
 	epUrl := fmt.Sprintf("%s/files/%d", s.apiUrl, file.ID)
 
 	req := s.mustNewReq(ctx, http.MethodDelete, epUrl)
@@ -173,7 +184,7 @@ func (s *SDTP) Ack(ctx context.Context, file FileInfo) error {
 	return fmt.Errorf("request failed: %s", resp.Status)
 }
 
-func (s *SDTP) Register(ctx context.Context) error {
+func (s *DefaultSDTPClient) Register(ctx context.Context) error {
 	epUrl := fmt.Sprintf("%s/register", s.apiUrl)
 
 	req := s.mustNewReq(ctx, http.MethodPut, epUrl)
@@ -197,7 +208,7 @@ func (s *SDTP) Register(ctx context.Context) error {
 	return nil
 }
 
-func (s *SDTP) Check(ctx context.Context) error {
+func (s *DefaultSDTPClient) Check(ctx context.Context) error {
 	epUrl := fmt.Sprintf("%s/files", s.apiUrl)
 
 	req := s.mustNewReq(ctx, http.MethodGet, epUrl)
@@ -214,12 +225,16 @@ func (s *SDTP) Check(ctx context.Context) error {
 		return ErrForbidden
 	case http.StatusNotFound:
 		return ErrNotFound
+	case http.StatusConflict:
+		return ErrExists
 	}
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusCreated {
 		return fmt.Errorf("request failed: %s", resp.Status)
 	}
 	return nil
 }
+
+var _ SDTPClient = (*DefaultSDTPClient)(nil)
 
 type writer struct {
 	w            io.WriteCloser

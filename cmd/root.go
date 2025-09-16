@@ -1,19 +1,8 @@
 package cmd
 
 import (
-	"time"
-
 	"github.com/asips/sdtp-client/internal"
 	"github.com/spf13/cobra"
-)
-
-var (
-	strApiUrl         string
-	certPath          string
-	keyPath           string
-	checkCertExprFlag bool
-	checkCertDays     int
-	httpTimeout       time.Duration
 )
 
 var rootCmd = &cobra.Command{
@@ -33,6 +22,17 @@ References:
 `,
 	Version: internal.Version + " (" + internal.GitSHA + ")",
 	RunE: func(cmd *cobra.Command, args []string) error {
+
+		flags := cmd.Flags()
+		certPath, err := flags.GetString("cert")
+		cobra.CheckErr(err)
+		keyPath, err := flags.GetString("key")
+		cobra.CheckErr(err)
+		checkCertDays, err := flags.GetInt("check-cert-days")
+		cobra.CheckErr(err)
+		checkCertExprFlag, err := flags.GetBool("check-cert-expr")
+		cobra.CheckErr(err)
+
 		if checkCertExprFlag {
 			checkCert(certPath, keyPath, checkCertDays)
 		}
@@ -45,11 +45,11 @@ References:
 
 func init() {
 	flags := rootCmd.PersistentFlags()
-	flags.StringVarP(&strApiUrl, "api-url", "u", "https://sips-data.ssec.wisc.edu/rivet/v1", "SDTP API base url")
-	flags.StringVarP(&certPath, "cert", "c", "", "Path to PEM encoded client certificate.")
-	flags.StringVarP(&keyPath, "key", "k", "", "Path to PEM encoded client private key")
-	flags.BoolVar(&checkCertExprFlag, "check-cert-expr", true, "Set to false to skip checking cert expiration")
-	flags.IntVar(&checkCertDays, "check-cert-days", 30, "Number of days before cert expiration to issue a warning")
+	flags.StringP("api-url", "u", "https://sips-data.ssec.wisc.edu/rivet/v1", "SDTP API base url")
+	flags.StringP("cert", "c", "", "Path to PEM encoded client certificate.")
+	flags.StringP("key", "k", "", "Path to PEM encoded client private key")
+	flags.Bool("check-cert-expr", true, "Set to false to skip checking cert expiration")
+	flags.Int("check-cert-days", 30, "Number of days before cert expiration to issue a warning")
 
 	rootCmd.MarkPersistentFlagRequired("cert")
 	rootCmd.MarkPersistentFlagRequired("key")

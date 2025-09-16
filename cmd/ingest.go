@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"net/url"
 	"os"
 	"os/signal"
 	"sync"
@@ -14,33 +13,55 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	destDir     string
-	tags        map[string]string
-	stream      string
-	shortName   string
-	mission     string
-	noAckFlag   bool
-	listFlag    bool
-	concurrency uint
-)
-
 var ingestCmd = &cobra.Command{
 	Use:   "ingest",
 	Short: "Ingest data from SDTP server",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		flags := cmd.Flags()
+		certPath, err := flags.GetString("cert")
+		cobra.CheckErr(err)
+		keyPath, err := flags.GetString("key")
+		cobra.CheckErr(err)
+		httpTimeout, err := flags.GetDuration("http-timeout")
+		cobra.CheckErr(err)
+		checkCertDays, err := flags.GetInt("check-cert-days")
+		cobra.CheckErr(err)
+		checkCertExprFlag, err := flags.GetBool("check-cert-expr")
+		cobra.CheckErr(err)
+
+		strApiUrl, err := flags.GetString("api-url")
+		cobra.CheckErr(err)
 		apiUrl := parseApiUrl(strApiUrl)
+		sdtpFactory := func() internal.SDTPClient {
+			sdtp, err := internal.NewDefaultSDTP(apiUrl, certPath, keyPath, httpTimeout)
+			if err != nil {
+				log.Fatal("Failed to create SDTP client: %s", err)
+			}
+			return sdtp
+		}
+
+		destDir, err := flags.GetString("dest-dir")
+		cobra.CheckErr(err)
 		if _, err := os.Stat(destDir); os.IsNotExist(err) {
 			log.Printf("creating destination directory: %s", destDir)
 			os.MkdirAll(destDir, 0755)
 		}
+
+		tags, err := flags.GetStringToString("tag")
+		cobra.CheckErr(err)
+
+		stream, err := flags.GetString("stream")
+		cobra.CheckErr(err)
 		if flags.Changed("stream") {
 			tags["stream"] = stream
 		}
+		mission, err := flags.GetString("mission")
+		cobra.CheckErr(err)
 		if flags.Changed("mission") {
 			tags["mission"] = mission
 		}
+		shortName, err := flags.GetString("short-name")
+		cobra.CheckErr(err)
 		if flags.Changed("short-name") {
 			tags["ShortName"] = shortName
 		}
@@ -48,18 +69,18 @@ var ingestCmd = &cobra.Command{
 			checkCert(certPath, keyPath, checkCertDays)
 		}
 
-		if listFlag {
-			doList(apiUrl, certPath, keyPath, tags, httpTimeout)
-		}
+		noAckFlag, err := flags.GetBool("no-ack")
+		cobra.CheckErr(err)
+
+		concurrency, err := flags.GetUint("concurrency")
+		cobra.CheckErr(err)
 
 		return doIngest(
-			apiUrl,
-			certPath,
-			keyPath,
+			sdtpFactory,
 			destDir,
 			tags,
 			noAckFlag,
-			httpTimeout,
+			concurrency,
 		)
 	},
 }
@@ -67,30 +88,23 @@ var ingestCmd = &cobra.Command{
 func init() {
 	flags := ingestCmd.Flags()
 
-	flags.StringVarP(&destDir, "dest-dir", "d", "", "Local directory to ingest data to")
-	flags.StringVar(&stream, "stream", "", "SDTP 'stream' field (query parameter)")
-	flags.StringVar(&shortName, "short-name", "", "SDTP 'ShortName' field (query parameter)")
-	flags.StringVar(&mission, "mission", "", "SDTP 'mission' field (query parameter)")
-	flags.StringToStringVarP(&tags, "tag", "t", map[string]string{}, "<key>=<value> tags to filter by. May be specified multiple times or as a comma-separated list")
-	flags.BoolVar(&noAckFlag, "no-ack", false, "Skip acknowledgment after successful ingest")
-	flags.BoolVar(&listFlag, "list", false, "List available files, but do not download")
-	flags.DurationVar(&httpTimeout, "http-timeout", time.Minute*5, "HTTP client timeout in seconds for list operations")
-	flags.UintVar(&concurrency, "concurrency", 4, "Number of concurrent downloads")
+	flags.StringP("dest-dir", "d", "", "Local directory to ingest data to")
+	flags.String("stream", "", "SDTP 'stream' field (query parameter)")
+	flags.String("short-name", "", "SDTP 'ShortName' field (query parameter)")
+	flags.String("mission", "", "SDTP 'mission' field (query parameter)")
+	flags.StringToStringP("tag", "t", map[string]string{}, "<key>=<value> tags to filter by. May be specified multiple times or as a comma-separated list")
+	flags.Bool("no-ack", false, "Skip acknowledgment after successful ingest")
+	flags.Bool("list", false, "List available files, but do not download")
+	flags.Duration("http-timeout", time.Minute*5, "HTTP client timeout in seconds for list operations")
+	flags.Uint("concurrency", 4, "Number of concurrent downloads")
 
 	flags.MarkDeprecated("list", "use 'list' sub-command instead")
 }
 
-func doIngest(apiUrl *url.URL, certPath, keyPath, destDir string, tags map[string]string, noAck bool, timeout time.Duration) error {
+func doIngest(sdtpFactory func() internal.SDTPClient, destDir string, tags map[string]string, noAck bool, concurrency uint) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	sdtpFactory := func() *internal.SDTP {
-		sdtp, err := internal.NewSDTP(apiUrl, certPath, keyPath, timeout)
-		if err != nil {
-			log.Fatal("Failed to create SDTP client: %s", err)
-		}
-		return sdtp
-	}
 	sdtp := sdtpFactory()
 
 	files, err := sdtp.List(ctx, tags)
@@ -121,7 +135,7 @@ func doIngest(apiUrl *url.URL, certPath, keyPath, destDir string, tags map[strin
 	return nil
 }
 
-func downloadWorker(ctx context.Context, wg *sync.WaitGroup, files chan internal.FileInfo, sdtpFactory func() *internal.SDTP, noAck bool, destDir string) {
+func downloadWorker(ctx context.Context, wg *sync.WaitGroup, files chan internal.FileInfo, sdtpFactory func() internal.SDTPClient, noAck bool, destDir string) {
 	defer wg.Done()
 	sdtp := sdtpFactory()
 	for {

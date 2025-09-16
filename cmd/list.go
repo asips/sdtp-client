@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -24,8 +23,26 @@ Listed files will be printed as JSON objects, one per line to stdout. Any log me
 go to stderr.
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		flags := cmd.Flags()
+		certPath, err := flags.GetString("cert")
+		cobra.CheckErr(err)
+		keyPath, err := flags.GetString("key")
+		cobra.CheckErr(err)
+		httpTimeout, err := flags.GetDuration("http-timeout")
+		cobra.CheckErr(err)
+
+		strApiUrl, err := flags.GetString("api-url")
+		cobra.CheckErr(err)
 		apiUrl := parseApiUrl(strApiUrl)
-		doList(apiUrl, certPath, keyPath, tags, httpTimeout)
+		sdtp, err := internal.NewDefaultSDTP(apiUrl, certPath, keyPath, httpTimeout)
+		if err != nil {
+			log.Fatal("Failed to create SDTP client: %s", err)
+		}
+
+		tags, err := flags.GetStringToString("tag")
+		cobra.CheckErr(err)
+
+		doList(sdtp, tags)
 
 		return nil
 	},
@@ -34,17 +51,13 @@ go to stderr.
 func init() {
 	flags := listCmd.Flags()
 
-	flags.DurationVar(&httpTimeout, "http-timeout", time.Second*60, "HTTP client timeout in seconds for list operations")
+	flags.Duration("http-timeout", time.Second*60, "HTTP client timeout in seconds for list operations")
+	flags.StringToStringP("tag", "t", map[string]string{}, "<key>=<value> tags to filter by. May be specified multiple times or as a comma-separated list")
 }
 
-func doList(apiUrl *url.URL, certPath, keyPath string, tags map[string]string, timeout time.Duration) {
+func doList(sdtp internal.SDTPClient, tags map[string]string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-
-	sdtp, err := internal.NewSDTP(apiUrl, certPath, keyPath, timeout)
-	if err != nil {
-		log.Fatal("Failed to create SDTP client: %s", err)
-	}
 
 	files, err := sdtp.List(ctx, tags)
 	if err != nil {

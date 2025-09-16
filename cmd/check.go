@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,19 +17,29 @@ var checkCmd = &cobra.Command{
 	Short: "check a new client certificate with the server",
 	Long:  "check a new client certificate with the server",
 	Run: func(cmd *cobra.Command, args []string) {
-		apiUrl := parseApiUrl(strApiUrl)
-		docheck(apiUrl)
+		flags := cmd.Flags()
+		certPath, err := flags.GetString("cert")
+		cobra.CheckErr(err)
+		keyPath, err := flags.GetString("key")
+		cobra.CheckErr(err)
+		checkCertDays, err := flags.GetInt("check-cert-days")
+		cobra.CheckErr(err)
+		httpTimeout, err := flags.GetDuration("http-timeout")
+		cobra.CheckErr(err)
+		apiUrlStr, err := flags.GetString("api-url")
+		cobra.CheckErr(err)
+		apiUrl := parseApiUrl(apiUrlStr)
+		sdtp, err := internal.NewDefaultSDTP(apiUrl, certPath, keyPath, httpTimeout)
+		if err != nil {
+			log.Fatal("Failed to create SDTP client: %s", err)
+		}
+		doCheck(sdtp, certPath, keyPath, checkCertDays)
 	},
 }
 
-func docheck(apiUrl *url.URL) {
+func doCheck(sdtp internal.SDTPClient, certPath, keyPath string, checkCertDays int) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-
-	sdtp, err := internal.NewSDTP(apiUrl, certPath, keyPath, httpTimeout)
-	if err != nil {
-		log.Fatal("Failed to create SDTP client: %s", err)
-	}
 
 	certInfo, err := getCertificateInfo(certPath, keyPath)
 	if err != nil {
