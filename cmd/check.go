@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -33,15 +34,24 @@ var checkCmd = &cobra.Command{
 		if err != nil {
 			log.Fatal("Failed to create SDTP client: %s", err)
 		}
-		doCheck(sdtp, certPath, keyPath, checkCertDays)
+
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+
+		err = doCheck(ctx, sdtp, certPath, keyPath, checkCertDays, getCertificateInfo)
+		if err == errCertExpired {
+			os.Exit(3)
+		} else if err != nil {
+			os.Exit(1)
+		}
 	},
 }
 
-func doCheck(sdtp internal.SDTPClient, certPath, keyPath string, checkCertDays int) {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
+var errCertExpired = fmt.Errorf("certificate expired")
 
-	certInfo, err := getCertificateInfo(certPath, keyPath)
+func doCheck(ctx context.Context, sdtp internal.SDTPClient, certPath, keyPath string, checkCertDays int, certParser certParserFunc) error {
+
+	certInfo, err := certParser(certPath, keyPath)
 	if err != nil {
 		log.Printf("Failed to get certification info; skipping cert expriation check: %s", err)
 	}
@@ -55,7 +65,7 @@ ERROR:   Issuer:          %s
 ERROR:
 
 `, certInfo.DN, certInfo.Expiration.Format(time.RFC3339), certInfo.Issuer)
-		os.Exit(3)
+		return errCertExpired
 	} else if certInfo.DaysLeft > 0 && certInfo.DaysLeft <= checkCertDays {
 		log.Printf(`WARNING:    Certificate expires soon!
 WARNING:
@@ -81,11 +91,13 @@ WARNING:
 	if err != nil {
 		switch err {
 		case internal.ErrNotAuthorized:
-			log.Fatal("FAILED: failed to authenticate using provided cert and key")
+			return fmt.Errorf("failed to authenticate using provided cert and key")
 		case internal.ErrForbidden:
-			log.Fatal("FAILED: authenticated successfully (certificate works); Not authorized to access /files endpoint")
+			return fmt.Errorf("authenticated successfully (certificate works); Not authorized to access /files endpoint")
 		}
-		log.Fatal("FAILED: failed for a non-auth related reason: %s", err)
+		return fmt.Errorf("failed for a non-auth related reason: %s", err)
 	}
 	log.Printf("Successfully connected to server and performed a HEAD request to the /files endpoint.")
+
+	return nil
 }

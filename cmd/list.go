@@ -30,6 +30,10 @@ go to stderr.
 		cobra.CheckErr(err)
 		httpTimeout, err := flags.GetDuration("http-timeout")
 		cobra.CheckErr(err)
+		checkCertDays, err := flags.GetInt("check-cert-days")
+		cobra.CheckErr(err)
+
+		mustValidateCert(certPath, keyPath, checkCertDays)
 
 		strApiUrl, err := flags.GetString("api-url")
 		cobra.CheckErr(err)
@@ -42,7 +46,13 @@ go to stderr.
 		tags, err := flags.GetStringToString("tag")
 		cobra.CheckErr(err)
 
-		doList(sdtp, tags)
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+
+		_, err = doList(ctx, sdtp, tags)
+		if err != nil {
+			log.Fatal("Failed to list files: %s", err)
+		}
 
 		return nil
 	},
@@ -55,18 +65,15 @@ func init() {
 	flags.StringToStringP("tag", "t", map[string]string{}, "<key>=<value> tags to filter by. May be specified multiple times or as a comma-separated list")
 }
 
-func doList(sdtp internal.SDTPClient, tags map[string]string) {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
+func doList(ctx context.Context, sdtp internal.SDTPClient, tags map[string]string) (int, error) {
 	files, err := sdtp.List(ctx, tags)
 	if err != nil {
-		log.Fatal("Failed to list files: %s", err)
+		return 0, fmt.Errorf("Failed to list files: %s", err)
 	}
 
 	if len(files) == 0 {
 		log.Printf("No files found")
-		return
+		return 0, nil
 	}
 
 	log.Printf("Found %d files:", len(files))
@@ -78,4 +85,6 @@ func doList(sdtp internal.SDTPClient, tags map[string]string) {
 		}
 		fmt.Fprintf(os.Stdout, "%s\n", string(dat))
 	}
+
+	return len(files), nil
 }

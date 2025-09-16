@@ -36,10 +36,20 @@ type FileInfo struct {
 	Extra    map[string]any    `json:"extra"`
 }
 
-type SDTPClient interface {
+// SDTPClient is the interface for interacting with the SDTP server
+//
+// TODO: This interface is too heavy
+type FileListor interface {
 	List(ctx context.Context, tags map[string]string) ([]FileInfo, error)
+}
+type FileDownloader interface {
 	Download(ctx context.Context, file FileInfo, destDir string) error
 	Ack(ctx context.Context, file FileInfo) error
+}
+
+type SDTPClient interface {
+	FileListor
+	FileDownloader
 	Register(ctx context.Context) error
 	Check(ctx context.Context) error
 }
@@ -55,23 +65,21 @@ func NewDefaultSDTP(apiUrl *url.URL, certFile, keyFile string, timeout time.Dura
 		return nil, fmt.Errorf("failed to load key pair: %w", err)
 	}
 
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				Certificates: []tls.Certificate{cert},
-				// disable TLS 1.3 to avoid Apache SSL error "Re-negotiation handshake failed"
-				MaxVersion: tls.VersionTLS12,
-				// set to avoid Apahce SSL error "SSL Library Error: error:0A000153:SSL routines::no renegotiation"
-				Renegotiation: tls.RenegotiateOnceAsClient,
+	return &DefaultSDTPClient{
+		apiUrl: apiUrl,
+		client: &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					Certificates: []tls.Certificate{cert},
+					// disable TLS 1.3 to avoid Apache SSL error "Re-negotiation handshake failed"
+					MaxVersion: tls.VersionTLS12,
+					// set to avoid Apahce SSL error "SSL Library Error: error:0A000153:SSL routines::no renegotiation"
+					Renegotiation: tls.RenegotiateOnceAsClient,
+				},
 			},
-		},
-		Timeout: timeout,
-	}
-
-	return &DefaultSDTPClient{client, apiUrl}, nil
+			Timeout: timeout,
+		}}, nil
 }
-
-//go:generate mockgen -package internal -source sdtp.go -destination sdtp_mock.go *
 
 func (s *DefaultSDTPClient) mustNewReq(ctx context.Context, method, url string) *http.Request {
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
@@ -151,7 +159,7 @@ func (s *DefaultSDTPClient) Download(ctx context.Context, file FileInfo, destDir
 
 	if !dest.ChecksumMatches() {
 		os.Remove(destPath)
-		return fmt.Errorf("checksum mismatch for %s", destPath)
+		return fmt.Errorf("checksum mismatch for %s; got %s, wanted %s", file.Name, dest.Computed(), file.Checksum)
 	}
 	if err := os.Rename(destPath, path.Join(destDir, file.Name)); err != nil {
 		return fmt.Errorf("failed to rename %s to %s: %w", destPath, file.Name, err)
@@ -201,11 +209,12 @@ func (s *DefaultSDTPClient) Register(ctx context.Context) error {
 		return ErrForbidden
 	case http.StatusNotFound:
 		return ErrNotFound
+	case http.StatusConflict:
+		return ErrExists
+	case http.StatusOK, http.StatusCreated:
+		return nil
 	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("request failed: %s", resp.Status)
-	}
-	return nil
+	return fmt.Errorf("request failed: %s", resp.Status)
 }
 
 func (s *DefaultSDTPClient) Check(ctx context.Context) error {
@@ -228,7 +237,7 @@ func (s *DefaultSDTPClient) Check(ctx context.Context) error {
 	case http.StatusConflict:
 		return ErrExists
 	}
-	if resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("request failed: %s", resp.Status)
 	}
 	return nil
@@ -246,14 +255,20 @@ func (w *writer) Close() error {
 	return w.w.Close()
 }
 
-func (w *writer) Write(p []byte) (n int, err error) {
-	w.h.Write(p)
+func (w *writer) Write(p []byte) (int, error) {
+	_, err := w.h.Write(p)
+	if err != nil {
+		return 0, fmt.Errorf("checksum err: %w", err)
+	}
 	return w.w.Write(p)
 }
 
 func (w *writer) ChecksumMatches() bool {
-	sum := strings.ToLower(fmt.Sprintf("%x", w.h.Sum(nil)))
-	return w.expectedCsum == sum
+	return w.expectedCsum == w.Computed()
+}
+
+func (w *writer) Computed() string {
+	return strings.ToLower(fmt.Sprintf("%x", w.h.Sum(nil)))
 }
 
 func newWriter(destPath, checksum string) (*writer, error) {

@@ -32,19 +32,25 @@ var registerCmd = &cobra.Command{
 			log.Fatal("Failed to create SDTP client: %s", err)
 		}
 
-		doRegister(sdtp, certPath, keyPath)
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+
+		if ok := doRegister(ctx, sdtp); !ok {
+			log.Fatal("Failed to register: %s", err)
+		}
 	},
 }
 
-func doRegister(sdtp internal.SDTPClient, certFile, keyFile string) {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
+func doRegister(ctx context.Context, sdtp internal.SDTPClient) bool {
 	err := sdtp.Register(ctx)
 	if err == internal.ErrExists {
-		log.Fatal("Registration already exists. Contact your SDTP administrator to activate your account.")
+		log.Printf("Registration already exists. Contact your SDTP administrator to activate your account.")
+		return false
 	} else if err != nil {
-		log.Fatal("Registration failed: %s", err)
+		log.Printf("Registration failed: %s", err)
+		return false
 	}
 	log.Printf("Registration successful. Contact your SDTP administrator to activate your account.")
+
+	return true
 }

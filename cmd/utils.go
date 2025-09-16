@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net/url"
 	"os"
+	"testing"
 	"time"
 
+	"github.com/asips/sdtp-client/internal"
 	"github.com/asips/sdtp-client/internal/log"
 )
 
@@ -57,7 +60,9 @@ func getCertificateInfo(certFile, keyFile string) (CertInfo, error) {
 	}, nil
 }
 
-func checkCert(certFile, keyFile string, days int) {
+type certParserFunc = func(certFile, keyFile string) (CertInfo, error)
+
+func mustValidateCert(certFile, keyFile string, days int) {
 	info, err := getCertificateInfo(certFile, keyFile)
 	if err != nil {
 		log.Printf("Failed to get certificate info: %s", err)
@@ -80,4 +85,32 @@ func parseApiUrl(strUrl string) *url.URL {
 		log.Fatal("api-url must not contain query or fragment")
 	}
 	return u
+}
+
+type mockSDTP struct {
+	err     error
+	listing []internal.FileInfo
+}
+
+func (m *mockSDTP) Check(ctx context.Context) error {
+	return m.err
+}
+func (m *mockSDTP) List(ctx context.Context, tags map[string]string) ([]internal.FileInfo, error) {
+	return m.listing, m.err
+}
+
+func (m *mockSDTP) Download(ctx context.Context, file internal.FileInfo, destDir string) error {
+	return m.err
+}
+func (m *mockSDTP) Ack(ctx context.Context, file internal.FileInfo) error {
+	return m.err
+}
+func (m *mockSDTP) Register(ctx context.Context) error {
+	return m.err
+}
+
+func createMockSDTP(t *testing.T) *mockSDTP {
+	t.Helper()
+
+	return &mockSDTP{err: nil}
 }

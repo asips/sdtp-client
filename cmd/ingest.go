@@ -29,15 +29,14 @@ var ingestCmd = &cobra.Command{
 		checkCertExprFlag, err := flags.GetBool("check-cert-expr")
 		cobra.CheckErr(err)
 
+		mustValidateCert(certPath, keyPath, checkCertDays)
+
 		strApiUrl, err := flags.GetString("api-url")
 		cobra.CheckErr(err)
 		apiUrl := parseApiUrl(strApiUrl)
-		sdtpFactory := func() internal.SDTPClient {
-			sdtp, err := internal.NewDefaultSDTP(apiUrl, certPath, keyPath, httpTimeout)
-			if err != nil {
-				log.Fatal("Failed to create SDTP client: %s", err)
-			}
-			return sdtp
+		sdtp, err := internal.NewDefaultSDTP(apiUrl, certPath, keyPath, httpTimeout)
+		if err != nil {
+			log.Fatal("Failed to create SDTP client: %s", err)
 		}
 
 		destDir, err := flags.GetString("dest-dir")
@@ -66,7 +65,7 @@ var ingestCmd = &cobra.Command{
 			tags["ShortName"] = shortName
 		}
 		if checkCertExprFlag {
-			checkCert(certPath, keyPath, checkCertDays)
+			mustValidateCert(certPath, keyPath, checkCertDays)
 		}
 
 		noAckFlag, err := flags.GetBool("no-ack")
@@ -75,8 +74,12 @@ var ingestCmd = &cobra.Command{
 		concurrency, err := flags.GetUint("concurrency")
 		cobra.CheckErr(err)
 
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+
 		return doIngest(
-			sdtpFactory,
+			ctx,
+			sdtp,
 			destDir,
 			tags,
 			noAckFlag,
@@ -101,12 +104,7 @@ func init() {
 	flags.MarkDeprecated("list", "use 'list' sub-command instead")
 }
 
-func doIngest(sdtpFactory func() internal.SDTPClient, destDir string, tags map[string]string, noAck bool, concurrency uint) error {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
-	sdtp := sdtpFactory()
-
+func doIngest(ctx context.Context, sdtp internal.SDTPClient, destDir string, tags map[string]string, noAck bool, concurrency uint) error {
 	files, err := sdtp.List(ctx, tags)
 	if err != nil {
 		log.Fatal("Failed to list files: %s", err)
@@ -121,7 +119,7 @@ func doIngest(sdtpFactory func() internal.SDTPClient, destDir string, tags map[s
 	wg := sync.WaitGroup{}
 	filesCh := make(chan internal.FileInfo, concurrency)
 	for i := 0; i < int(concurrency); i++ {
-		go downloadWorker(ctx, &wg, filesCh, sdtpFactory, noAck, destDir)
+		go downloadWorker(ctx, &wg, sdtp, filesCh, noAck, destDir)
 		wg.Add(1)
 	}
 
@@ -135,9 +133,9 @@ func doIngest(sdtpFactory func() internal.SDTPClient, destDir string, tags map[s
 	return nil
 }
 
-func downloadWorker(ctx context.Context, wg *sync.WaitGroup, files chan internal.FileInfo, sdtpFactory func() internal.SDTPClient, noAck bool, destDir string) {
+func defaultDownloadWorker(ctx context.Context, wg *sync.WaitGroup, sdtp internal.SDTPClient, files chan internal.FileInfo, noAck bool, destDir string) {
 	defer wg.Done()
-	sdtp := sdtpFactory()
+
 	for {
 		select {
 		case file, more := <-files:
@@ -159,3 +157,5 @@ func downloadWorker(ctx context.Context, wg *sync.WaitGroup, files chan internal
 		}
 	}
 }
+
+var downloadWorker = defaultDownloadWorker

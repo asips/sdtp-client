@@ -34,7 +34,7 @@ References:
 		cobra.CheckErr(err)
 
 		if checkCertExprFlag {
-			checkCert(certPath, keyPath, checkCertDays)
+			mustValidateCert(certPath, keyPath, checkCertDays)
 		}
 		return nil
 	},
