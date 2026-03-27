@@ -6,7 +6,6 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/asips/sdtp-client/internal"
 	"github.com/asips/sdtp-client/internal/log"
@@ -98,7 +97,6 @@ func init() {
 	flags.StringToStringP("tag", "t", map[string]string{}, "<key>=<value> tags to filter by. May be specified multiple times or as a comma-separated list")
 	flags.Bool("no-ack", false, "Skip acknowledgment after successful ingest")
 	flags.Bool("list", false, "List available files, but do not download")
-	flags.Duration("http-timeout", time.Minute*5, "HTTP client timeout in seconds for list operations")
 	flags.Uint("concurrency", 4, "Number of concurrent downloads")
 
 	flags.MarkDeprecated("list", "use 'list' sub-command instead")

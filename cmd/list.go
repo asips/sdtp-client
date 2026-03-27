@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/asips/sdtp-client/internal"
 	"github.com/asips/sdtp-client/internal/log"
@@ -61,7 +60,6 @@ go to stderr.
 func init() {
 	flags := listCmd.Flags()
 
-	flags.Duration("http-timeout", time.Second*60, "HTTP client timeout in seconds for list operations")
 	flags.StringToStringP("tag", "t", map[string]string{}, "<key>=<value> tags to filter by. May be specified multiple times or as a comma-separated list")
 }
 

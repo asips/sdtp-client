@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"time"
+
 	"github.com/asips/sdtp-client/internal"
 	"github.com/spf13/cobra"
 )
@@ -48,6 +50,7 @@ func init() {
 	flags.StringP("api-url", "u", "https://sips-data.ssec.wisc.edu/rivet/v1", "SDTP API base url")
 	flags.StringP("cert", "c", "", "Path to PEM encoded client certificate.")
 	flags.StringP("key", "k", "", "Path to PEM encoded client private key")
+	flags.Duration("http-timeout", time.Minute*5, "HTTP timeout in seconds for client operations")
 	flags.Bool("check-cert-expr", true, "Set to false to skip checking cert expiration")
 	flags.Int("check-cert-days", 30, "Number of days before cert expiration to issue a warning")
 
