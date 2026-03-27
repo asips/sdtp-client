@@ -41,7 +41,7 @@ var ingestCmd = &cobra.Command{
 		destDir, err := flags.GetString("dest-dir")
 		cobra.CheckErr(err)
 		if _, err := os.Stat(destDir); os.IsNotExist(err) {
-			log.Printf("creating destination directory: %s", destDir)
+			log.Printf("creating destination directory: %q", destDir)
 			os.MkdirAll(destDir, 0755)
 		}
 
@@ -90,7 +90,7 @@ var ingestCmd = &cobra.Command{
 func init() {
 	flags := ingestCmd.Flags()
 
-	flags.StringP("dest-dir", "d", "", "Local directory to ingest data to")
+	flags.StringP("dest-dir", "d", ".", "Local directory to ingest data to")
 	flags.String("stream", "", "SDTP 'stream' field (query parameter)")
 	flags.String("short-name", "", "SDTP 'ShortName' field (query parameter)")
 	flags.String("mission", "", "SDTP 'mission' field (query parameter)")
