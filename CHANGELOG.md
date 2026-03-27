@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixes
 
-- Fix issue with http-timeout flag on check command
+- [#1] Fix issue with http-timeout flag on check command
 
 ## [v0.1.0] - 2025-09-16
 
